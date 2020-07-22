@@ -76,7 +76,7 @@ for file in glob.glob(path):
     
     #2: denoise try different filter
     gaussian_img = filters.gaussian(cleared_img, sigma = 0.5)
-   
+    print(gaussian_img.dtype)
     median_img = filters.median(cleared_img, selem1, behavior = 'ndimage')
     """
     sigma: Standard deviation for Gaussian kernel. 
@@ -108,9 +108,15 @@ for file in glob.glob(path):
     #find edges using the Sobel filter
     edges = filters.sobel(gaussian_img)
     plt.imshow(edges, cmap=plt.cm.gray)
-    
-    #fill edged
-    filled_contours = ndi.binary_fill_holes(edges,)    
+    hist, hist_centers = histogram(edges)
+    plt.plot(hist_centers, hist, lw=1)
+    ##########################################filling holes
+    #rescale image to stretch or shrink intensity levels, to clearly differentiate low intensity to high
+    from skimage.exposure import rescale_intensity
+    rescaled_edges = rescale_intensity(edges, in_range=(0, 255))
+    plt.imshow(rescaled_edges)
+    print(rescaled_edges)
+   
     #find markers of the background and the image based on the extreme parts of the histogram of gray values.
     markers = np.zeros_like(gaussian_img)
     markers[gaussian_img < 0.01] = 1
