@@ -26,31 +26,23 @@ from matplotlib import axes#to show images in plot form
 from pathlib import PurePath
 from scipy import ndimage as ndi #the statistic libary in python to process n-dimensional image
 
-from skimage import img_as_float, color, io # according to tutorial cv2 failed to do measure on image
+from skimage import util, color, io # according to tutorial cv2 failed to do measure on image
 from skimage import filters
 
-import glob#read data in a file
 
-from skimage.restoration import denoise_nl_means, estimate_sigma
-from skimage.morphology import disk, white_tophat, reconstruction
-from skimage.morphology import erosion, dilation
-
-from skimage.segmentation import watershed, clear_border
-from skimage.feature import peak_local_max, canny
-
-from skimage.measure import label, regionprops
-from skimage.color import label2rgb
 
 # step 1: read collection of image and convert to gray, and float form
-"""
+
 import glob#read data in a file
-import os#extract file name
-"""
-path = "C:/Users/apeng/Desktop/PENG/FIB1/*.tif"
+
+
+path = "C:/Users/Laga Ash/Desktop/FIB1/*.tif"
 for file in glob.glob(path): 
-    img = img_as_float(io.imread(file, 0))# 0 means read as gray
+    img = util.img_as_float(io.imread(file, 0))# 0 means read as gray
     pixel_to_um = 0.126 # 1 pixel = 0.126 um
     basename = PurePath(file).stem#extract file name
+    
+    #############################################################
     # step 2: denoising, and blur images use different filters in ndimage
     
     #1:check the histogram of the image to rescale image;
@@ -59,7 +51,7 @@ for file in glob.glob(path):
     #plt.hist(img.flat, bins = 100, range = (0, 0.5))
     
     #2: remove small particles in the image
-    #from skimage.morphology import disk, white_tophat
+    from skimage.morphology import disk, white_tophat
     """
     white_tophat: subtract morphological opening from image
                 = image - opening
@@ -74,9 +66,9 @@ for file in glob.glob(path):
     small_particles_img = white_tophat(img, selem1)
     cleared_img = (img - small_particles_img)
     
-    #2: denoise try different filter
+    #3: denoise try different filter
     gaussian_img = filters.gaussian(cleared_img, sigma = 0.5)
-    print(gaussian_img.dtype)
+   
     median_img = filters.median(cleared_img, selem1, behavior = 'ndimage')
     """
     sigma: Standard deviation for Gaussian kernel. 
@@ -84,114 +76,119 @@ for file in glob.glob(path):
     or as a single number, in which case it is equal for all axes.
     smaller sigma preserve edge better: to differentiate the central pixel from surrounding pixels
     """
+    #########################################################################
     # step 3: thresholding and clean up image(erode, fill holes, remove small objects etc) 
              #and create mask for image
        
     #1: thresholding to create a binary image
     #from skimage import filters
-    thresh = filters.threshold_otsu(gaussian_img)# the value for doing threshold
-    
-    binary = gaussian_img > thresh
+    thresh_gaussian_filter = filters.threshold_otsu(gaussian_img)# the value for doing threshold
+    binary_img1 = gaussian_img > thresh_gaussian_filter
    
     ###############################################
-    #region based segmentation
-    #from skimage.filters import sobel
-            
-    #show the histogram of image
-    from skimage.exposure import histogram
-    hist, hist_centers = histogram(gaussian_img)
-    plt.plot(hist_centers, hist, lw = 1)
-    
-    #threshold based on histgram value
-    plt.imshow(gaussian_img > 0.1, cmap = plt.cm.gray)    
+    #edge detected segmentation
+    #from skimage.filters import sobel      
     
     #find edges using the Sobel filter
     edges = filters.sobel(gaussian_img)
-    plt.imshow(edges, cmap=plt.cm.gray)
-    hist, hist_centers = histogram(edges)
-    plt.plot(hist_centers, hist, lw=1)
-    ##########################################filling holes
-    #rescale image to stretch or shrink intensity levels, to clearly differentiate low intensity to high
-    from skimage.exposure import rescale_intensity
-    rescaled_edges = rescale_intensity(edges, in_range=(0, 255))
-    plt.imshow(rescaled_edges)
-    print(rescaled_edges)
-   
-    #find markers of the background and the image based on the extreme parts of the histogram of gray values.
-    markers = np.zeros_like(gaussian_img)
-    markers[gaussian_img < 0.01] = 1
-    markers[gaussian_img > 0.1] = 2    
-
-    #2: clean up image: fill holes, watershed to distinguish two overlapping images
     
-    # 1): morphology of the mask
-    """
-    from skimage.morphology import erosion, dilation, opening, closing, white_tophat
-    from skimage.morphology import disk, reconstruction
-    """
-    seed = np.copy(edges)   
-    seed[1:-1, 1:-1] = edges.max()
-    mask = edges
-    filled_holes = reconstruction(seed, mask, method = 'erosion')
-    plt.imshow(filled_holes, cmap=plt.cm.gray)
-    # 2): segragate two smoothingly connected patches
+    #convert images into boolean array
+    thresh_sobel_filter = filters.threshold_otsu(edges)
+    binary_img2 = edges> thresh_sobel_filter
+    
+    # creating mask
+    from skimage.morphology import erosion
+    eroded_img = erosion(binary_img2, selem=disk(1))   
+    filled_contours_img = ndi.binary_fill_holes(eroded_img).astype(int)#filling holes
+    
+    # watershed to distinguish two overlapping images
     #watershed
-    """
+   
     from skimage.segmentation import watershed, clear_border
     from skimage.feature import peak_local_max
-    from scipy import ndimage as ndi
+    from skimage.morphology import opening
+
     """
-    distance = ndi.distance_transform_edt(dilated)
-    local_maxi = peak_local_max(distance, indices=False, footprint=np.ones((1, 1)))
-    #print(local_maxi, local_maxi.dtype)
-    markers = ndi.label(local_maxi)[0]
-    #print(markers, markers.dtype)
-    labels = watershed(distance,markers=markers, mask =dilated) 
+    ndi.distance_transform_edt():
+        Exact Euclidean distance transform, which gives values of the Euclidean distance:
+                           n
+            y_i = sqrt(sum (x[i]-b[i])**2)
+                          i
+        where b[i] is the background point (value 0) with the smallest Euclidean distance to input points x[i], 
+        and n is the number of dimensions.
+        
+    peak_ocal_max():
+        Find peaks in an image as coordinate list or boolean mask.
+        Peaks are the local maxima in a region of 2 * min_distance + 1 (i.e. peaks are separated by at least min_distance).
+        If there are multiple local maxima with identical pixel intensities inside the region defined with min_distance, 
+        the coordinates of all such pixels are returned.
+   min_distance: int, optional
+        Minimum number of pixels separating peaks in a region of 2 * min_distance + 1 (i.e. peaks are separated by at least 
+        min_distance). To find the maximum number of peaks, use min_distance=1.
+  markers: 
+      int, or ndarray of int, same shape as image, optional
+      The desired number of markers, or an array marking the basins with the values to be assigned in the label matrix. 
+      Zero means not a marker. If None (no markers given), the local minima of the image are used as markers.
+    indices:
+        If indices = True : (row, column, …) coordinates of peaks.
+        If indices = False : Boolean array shaped like image, with peaks represented by True values.
+    footprint:
+        ndarray of bools, optional
+        If provided, footprint == 1 represents the local region within which to search for peaks at every point in image. 
+        Overrides min_distance.
+    labels: 
+        ndarray of ints, optional
+        If provided, each unique region labels == value represents a unique region to search for peaks. 
+        Zero is reserved for background.
+        An integer ndarray where each unique feature in input has a unique label in the returned array.
+    mask:
+        ndarray of bools or 0s and 1s, optional
+        Array of same shape as image. Only points at which mask == True will be labeled.
+    """
+   
+    distance = ndi.distance_transform_edt(filled_contours_img)#euclidean distrance transform between each pixels
+    local_max = peak_local_max(distance, indices=False, footprint=np.ones((1, 1)))
+    
+    """
+    ndi.label():
+    Label features in an array. An array-like object to be labeled. 
+    Any non-zero values in input are counted as features and zero values are considered the background.
+    """
+    markers = ndi.label(local_max)[0]
+    watershed_img = watershed(distance, markers=markers, mask=filled_contours_img) 
+    cleared_img = opening(watershed_img, selem=disk(2))
     
     #remove artifacts connected to image border
-    cleared = clear_border(labels)
+    final_mask = clear_border(cleared_img)
+    
+    #####################################################################
     
     # step 4: label image regions, label the object in the mask
-    """
+    
     from skimage.measure import label, regionprops
     from skimage.color import label2rgb
-    """
+    
     #1. label mask with different colors
-    label_img = label(cleared)
+    color_label_img = label(final_mask)
     # to make the background transparent, pass the value of `bg_label`,
     # and leave `bg_color` as `None` and `kind` as `overlay`
-    image_label_overlay = label2rgb(label_img, bg_label=0)
+    image_label_overlay = label2rgb(color_label_img, bg_label=0)
     
     #2. label the mask with integer
-    s = [[1,1,1], [1,1,1], [1,1,1]] #8-connectivity, imageJ default
+    connectivity = [[1,1,1], [1,1,1], [1,1,1]] #8-connectivity, imageJ default
     # label_im, nb_labels = ndimage.label(mask), ndimage has a function to label unconnected pixels
     #from scipy import ndimage as ndi
-    labeled_mask, num_labels = ndi.label(cleared, structure=s)
+    numerically_labeled_mask, num_labels = ndi.label(final_mask, structure=connectivity)
     #The function outputs a new image that contains a different integer label 
     #for each object, and also the number of objects found.
     #3. color the labels to see the effect
-    nm_labeled_mask = color.label2rgb(labeled_mask, bg_label=0)
-    #print(num_labels)   
-    
+    nm_labeled_mask = color.label2rgb(numerically_labeled_mask, bg_label=0)
+       
+    ##########################################################
     # step 5. measure the properties of each labeled object
-    props = regionprops(labeled_mask, img)
-    """
-    try to label each cluster with number but haven't figure out
-    from PIL import ImageDraw
-    import cv2
-    output_img = nm_labeled_mask.copy()
-    for i in range(1, num_labels + 1):
-            print (i)       
-    for properties in props:
-        y0, x0 = properties.centroid
-        x = int(x0)
-        y = int(y0)
-              
-        labled = cv2.putText(output_img, text = "{}".format(i), org = (x, y),fontFace = 1, 
-                                 fontScale = 2, color = (255, 255, 255), thickness = 2)
-        plt.imshow(labled)
-        plt.show()
-    """
+    props = regionprops(numerically_labeled_mask, img)
+    
+    ###################################################################
     # Step 6: Output results into a csv file
     #1. the property list
     propList = ['Area','MajorAxisLength','MinorAxisLength','Perimeter','Compactness', 
@@ -233,14 +230,12 @@ for file in glob.glob(path):
     #show images
     fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 10))
     ax = axes.ravel()
-    titles = ['Original', 'gaussian blur', 'watershed', 'labeled']
+    titles = ['Original', 'gaussian blur', 'segmented', 'labeled']
     imgs = [img, gaussian_img,
-            labels, nm_labeled_mask]
+            final_mask, nm_labeled_mask]
     for n in range(0, len(imgs)):
         ax[n].imshow(imgs[n], cmap=plt.cm.gray)
         ax[n].set_title(titles[n])
         ax[n].axis('off')
     plt.tight_layout()
     plt.savefig("C:/Users/Laga Ash/Desktop/FIB1/{0} {1}.jpg".format(basename, "layout"))
-   
-    
