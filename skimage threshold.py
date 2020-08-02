@@ -23,18 +23,18 @@ Step 6: Output results into a csv file
 import numpy as np #do calculation on images
 from matplotlib import pyplot as plt
 from matplotlib import axes#to show images in plot form
-from pathlib import PurePath
+
 from scipy import ndimage as ndi #the statistic libary in python to process n-dimensional image
 
 from skimage import util, color, io # according to tutorial cv2 failed to do measure on image
-from skimage import filters
+
 
 
 
 # step 1: read collection of image and convert to gray, and float form
 
 import glob#read data in a file
-
+from pathlib import PurePath
 
 path = "C:/Users/Laga Ash/Desktop/FIB1/*.tif"
 for file in glob.glob(path): 
@@ -67,6 +67,7 @@ for file in glob.glob(path):
     cleared_img = (img - small_particles_img)
     
     #3: denoise try different filter
+    from skimage import filters
     gaussian_img = filters.gaussian(cleared_img, sigma = 0.5)
    
     median_img = filters.median(cleared_img, selem1, behavior = 'ndimage')
@@ -239,3 +240,5 @@ for file in glob.glob(path):
         ax[n].axis('off')
     plt.tight_layout()
     plt.savefig("C:/Users/Laga Ash/Desktop/FIB1/{0} {1}.jpg".format(basename, "layout"))
+   
+    
